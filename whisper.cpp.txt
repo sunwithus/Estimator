@@ -1,0 +1,85 @@
+git clone https://github.com/ggerganov/whisper.cpp.git
+cd whisper.cpp
+
+Сборка проекта с помощью CMake:
+
+bash
+cmake -B build
+cmake --build build --config Release
+
+
+Скачайте модель, например, "medium":
+
+bash
+bash ./models/download-ggml-model.sh medium
+
+bash
+make server
+
+Запустите сервер, указав путь к модели:
+bash
+./server -m models/ggml-medium.bin -t 8
+
+
+ Использование API
+Теперь сервер запущен и слушает порт 8080. Вы можете отправлять запросы к API:
+
+Транскрибирование аудио:
+bash
+curl -X POST http://localhost:8080/inference \
+  -H "Content-Type: multipart/form-data" \
+  -F file=@path/to/your/audio.wav \
+  -F language="auto" \
+  -F response_format="json"
+Смена модели:
+bash
+curl http://localhost:8080/load \
+  -H "Content-Type: multipart/form-data" \
+  -F model="/path/to/new/model.bin"
+
+
+
+
+
+
+
+
+
+
+
+ проблема с запуском команды make в среде MINGW64 на Windows. Давайте решим эту проблему и установим необходимые инструменты для сборки whisper.cpp:
+
+Установите MSYS2:
+
+Скачайте установщик MSYS2 с официального сайта: https://www.msys2.org/
+
+Запустите установщик и следуйте инструкциям
+
+Откройте терминал MSYS2 MinGW 64-bit:
+
+Найдите "MSYS2 MinGW 64-bit" в меню Пуск и запустите
+
+Обновите пакетный менеджер:
+
+text
+pacman -Syu
+Установите необходимые инструменты:
+
+text
+pacman -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake make
+Добавьте путь к инструментам в переменную PATH:
+
+Найдите "Изменение системных переменных среды" в меню Пуск
+
+Нажмите "Переменные среды"
+
+В разделе "Системные переменные" найдите PATH
+
+Добавьте путь C:\msys64\mingw64\bin в конец значения PATH
+
+Перезапустите Git Bash или командную строку
+
+Теперь перейдите в директорию проекта whisper.cpp:
+
+text
+cd /c/dotnet/whisper.cpp

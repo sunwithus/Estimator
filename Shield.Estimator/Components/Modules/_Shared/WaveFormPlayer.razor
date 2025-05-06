@@ -1,0 +1,180 @@
+﻿@* WaveFormPlayer.razor *@
+
+@using Shield.Estimator.Shared.Components._SeedLibs
+@using Shield.AudioConverter.AudioConverterServices
+@using Shield.AudioConverter.AudioConverterServices.Decoder;
+@using Shield.AudioConverter.AudioConverterServices.FFMpeg;
+@using Shield.AudioConverter.AudioConverterServices.NAudio;
+
+@inject IJSRuntime JSRuntime
+@inject IWebHostEnvironment HostEnvironment
+@inject NavigationManager NavigationManager
+
+@inject AudioConverterFactory AudioConverterFactory
+
+<style>
+    #buttonsgroup {
+    font-size: 12px;
+    }
+
+    .player-container {
+        width: calc(100% - 110px);
+        padding-left: 8px;
+    }
+
+    .control-group {
+        width: 110px;
+        min-height: 150px;
+        font-size: 12px;
+    }
+</style>
+
+@if (IsAudioLoading)
+{
+    <WaveFormPlayerSkeleton />
+}
+<div style="display: @(IsAudioLoading ? "none" : "block" )">
+    <MudText Typo="Typo.body1" Class="d-flex align-center" Style="min-width:300px; min-height:174px; max-width:100%">
+        <MudButtonGroup id="buttonsgroup" Color="@ColorTag" Variant="Variant.Text" Vertical="true" Class="control-group">
+            <label>
+                <input type="checkbox" id="loopregions" checked="${loop}" /> Зацикливание
+            </label>
+            <MudDivider />
+            <label>
+                Скорость: <span id="currentspeed">1.00</span>x <input type="range" id="speedlevel" min="0" max="6" value="3" style="width: 100px;" />
+            </label>
+            <MudDivider />
+            <label>
+                Увеличение: <input type="range" id="zoomlevel" min="10" max="500" value="0" style="width: 100px;" />
+            </label>
+            <MudDivider />
+            <div style="display: flex; justify-content:space-between;">
+                <button id="backwardbutton">⏮</button>|<button id="forwardbutton">⏭</button>
+            </div>
+            <div id="saveaudio">
+                <MudButton Disabled="@IsAudioLoadErr" Variant="Variant.Outlined" FullWidth StartIcon="@Icons.Material.Filled.Save" Color="@ColorTag" Size="Size.Small">.wav</MudButton>
+            </div>
+        </MudButtonGroup>
+
+        <div id="playercontainer" style="width: calc(100% - 110px); padding-left: 8px;">
+            @if (IsAudioLoadErr)
+            {
+                <MudAlert Severity="Severity.Error" Class="text-center">
+                    Неподдерживаемый тип аудиозаписи: @RecordType
+                </MudAlert>
+            }
+        </div>
+    </MudText>
+</div>
+
+@code {
+    [Parameter] public string FileName { get; set; }
+    [Parameter] public bool AutoPlay { get; set; }
+    [Parameter] public Color ColorTag { get; set; } = Color.Default;
+    [Parameter] public byte[] AudioDataLeft { get; set; }
+    [Parameter] public byte[] AudioDataRight { get; set; }
+    [Parameter] public string RecordType { get; set; }
+
+    private bool IsAudioLoadErr = false;
+    private bool IsAudioLoading = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            string UnicId = Guid.NewGuid().ToString();
+            await LoadAudioData(UnicId);
+            await DeleteAudioFileAsync(UnicId);
+        }
+    }
+
+    private async Task LoadAudioData(string UnicId)
+    {
+        var path = Path.Combine(HostEnvironment.WebRootPath, "files", UnicId + ".wav");
+
+        Files.CreateDirectory(Path.GetDirectoryName(path));
+        try
+        {
+
+            if (AudioDataLeft != null) ConsoleCol.WriteLine("AudioDataLeft != null", ConsoleColor.DarkYellow);
+            ConsoleCol.WriteLine("RecordType: " + RecordType, ConsoleColor.DarkYellow);
+            IsAudioLoadErr = false;
+
+            await ConvertAudioFile(path);
+
+            string url = NavigationManager.BaseUri + "files/" + UnicId + ".wav";
+            try
+            {
+                IsAudioLoading = true;
+                StateHasChanged();
+                await JSRuntime.InvokeVoidAsync("createAudioSingletrack", url, FileName, AutoPlay);
+                await Task.Delay(200);
+                IsAudioLoading = false;
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Ошибка при выполнении JSRuntime в WaveFormPlayer.razor, проверьте кеш браузера");
+                Console.WriteLine(ex.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            IsAudioLoadErr = true;
+            Console.WriteLine("Ошибка при выполнении LoadAudioData в WaveFormPlayer.razor, возможно не поддерживается формат аудио");
+            Console.WriteLine(ex.Message);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ConvertAudioFile(string audioFilePath)
+    {
+        foreach (var converterType in Enum.GetValues<ConverterType>())
+        {
+            try
+            {
+                ConsoleCol.WriteLine($"Attempting conversion with {converterType}", ConsoleColor.Cyan);
+
+                var converter = AudioConverterFactory.CreateConverter(converterType);
+                ConsoleCol.WriteLine($"converterType = {converterType}", ConsoleColor.Cyan);
+                await converter.ConvertByteArrayToFileAsync(AudioDataLeft, AudioDataRight, audioFilePath, RecordType, RecordType);
+
+                if (File.Exists(audioFilePath))
+                {
+                    ConsoleCol.WriteLine($"Conversion successful using {converterType}", ConsoleColor.Green);
+                    return;
+                }
+                else
+                {
+                    ConsoleCol.WriteLine($"Conversion with {converterType} did not produce a file", ConsoleColor.Yellow);
+                }
+            }
+            catch (Exception ex)
+            {
+                ConsoleCol.WriteLine($"Error with {converterType}: {ex.Message}", ConsoleColor.Red);
+                // Логируем полную информацию об ошибке
+                //Console.WriteLine($"Full error details: {ex}");
+            }
+            continue;
+        }
+        throw new InvalidOperationException("All audio conversions failed");
+    }
+
+    private async Task DeleteAudioFileAsync(string UnicId)
+    {
+        await Task.Delay(7000); // Ждём, чтобы пользователь мог воспроизвести аудио
+        var path = Path.Combine(HostEnvironment.WebRootPath, "files", UnicId + ".wav");
+        try
+        {
+            Files.DeleteFilesByPath(path);
+            if (File.Exists(path))
+            {
+                Console.WriteLine("file is not deleted = " + path);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Ошибка DeleteAudioFileAsync: " + ex.Message);
+        }
+    }
+}
