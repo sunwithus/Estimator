@@ -10,15 +10,19 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.3" />
 
     <PackageReference Include="Polly" Version="8.5.2" />
-	<PackageReference Include="Whisper.net.Runtime.Cuda" Version="1.8.1" />
+	<PackageReference Include="Whisper.net" Version="1.8.1" />
+    
+	 
     <PackageReference Include="Whisper.net.Runtime" Version="1.8.1" />
-    <PackageReference Include="Whisper.net" Version="1.8.1" />
+    <PackageReference Include="Whisper.net.Runtime.Cuda.Windows" Version="1.8.1" />
+    <PackageReference Include="Whisper.net.Runtime.NoAvx" Version="1.8.1" />
+    <PackageReference Include="Whisper.net.Runtime.OpenVino" Version="1.8.1" />
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.8.1" />
+	  <!-- -->
+	  
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AudioConverter\AudioConverter.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Remove="C:\Users\sharp\.nuget\packages\accord\3.8.0\build\Accord.dll.config" />
   </ItemGroup>
   <ItemGroup>
     <Content Remove="C:\Users\sharp\.nuget\packages\accord\3.8.0\build\Accord.dll.config" />

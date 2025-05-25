@@ -1,12 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using Shield.Estimator.Business.Models.WhisperCppDto;
 using Shield.Estimator.Business.Options.WhisperOptions;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http.Headers;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Shield.Estimator.Business.Services;
 
@@ -41,10 +36,8 @@ public class WhisperCppService
     {
         try
         {
-            if(parameters == null)
-            {
-                parameters = new();
-            }
+            parameters ??= _options.Value.Params;//new InferenceRequestDto();
+
             using var form = new MultipartFormDataContent();
 
             // Добавление аудиофайла
@@ -53,7 +46,12 @@ public class WhisperCppService
             fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("audio/wav");
             form.Add(fileContent, "file", Path.GetFileName(audioFilePath));
 
-            // Добавление параметров
+            // Основные параметры (соответствуют параметрам из curl-примеров)
+            AddParameter(form, "temperature", parameters.Temperature);
+            AddParameter(form, "temperature_inc", parameters.TemperatureInc);
+            AddParameter(form, "response_format", parameters.ResponseFormat);
+            /*
+            // Дополнительные параметры модели (переименованы в соответствии с документацией) - тут не работает!!!!!!!!!!!!!!!!!
             AddParameter(form, "threads", parameters.Threads);
             AddParameter(form, "processors", parameters.Processors);
             AddParameter(form, "offset-t", parameters.OffsetT);
@@ -80,14 +78,21 @@ public class WhisperCppService
             AddParameter(form, "language", parameters.Language);
             AddParameter(form, "detect-language", parameters.DetectLanguage);
             AddParameter(form, "prompt", parameters.Prompt);
-            AddParameter(form, "model", parameters.Model);
+            //AddParameter(form, "model", parameters.Model);
             AddParameter(form, "ov-e-device", parameters.OvEDevice);
             AddParameter(form, "convert", parameters.Convert);
-            AddParameter(form, "temperature", parameters.Temperature);
-            AddParameter(form, "temperature_inc", parameters.TemperatureInc);
-            AddParameter(form, "response_format", parameters.ResponseFormat);
 
-            var response = await _httpClient.PostAsync(_options.Value.InferenceUrl, form);
+            // не для sever
+            AddParameter(form, "no-speech-thold", parameters.NoSpeechThold);
+            AddParameter(form, "suppress-nst", parameters.SuppressNst);
+            AddParameter(form, "no-context", parameters.NoContext);
+            AddParameter(form, "no-gpu", parameters.NoGpu);
+            AddParameter(form, "flash-attn", parameters.FlashAttn);
+            */
+
+
+
+    var response = await _httpClient.PostAsync(_options.Value.InferenceUrl, form);
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadAsStringAsync();

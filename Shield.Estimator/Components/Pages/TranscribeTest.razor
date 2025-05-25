@@ -9,7 +9,6 @@
 @using Shield.AudioConverter.AudioConverterServices.FFMpeg
 @using Shield.AudioConverter.AudioConverterServices.NAudio
 @using Shield.AudioConverter.AudioConverterServices.Decoder
-@inject IConfiguration conf
 @inject WhisperNetService WhisperNetService
 @inject WhisperCppService WhisperCppService
 
@@ -159,7 +158,6 @@
 
             Console.WriteLine("fileName = " + fileName);
             Console.WriteLine("audioFilePath = " + audioFilePath);
-            Console.WriteLine(" conf[PathToFFmpegExeForReplicator] = " + conf["PathToFFmpegExeForReplicator"]);
 
             await Task.Delay(10);
 
@@ -170,12 +168,21 @@
     private async Task TestAudio()
     {
         if (string.IsNullOrEmpty(audioFilePath)) return;
-        var ttt = await ffmpeg.ConvertFileToStreamAsync(audioFilePath);
-        Console.WriteLine(ttt.Length.ToString());
-        ttt = await naudio.ConvertFileToStreamAsync(audioFilePath);
-        Console.WriteLine(ttt.Length.ToString());
-        ttt = await decoder.ConvertFileToStreamAsync(audioFilePath);
-        Console.WriteLine(ttt.Length.ToString());
+
+        try
+        {
+            var ttt = await ffmpeg.ConvertFileToStreamAsync(audioFilePath);
+            Console.WriteLine(ttt.Length.ToString());
+            ttt = await naudio.ConvertFileToStreamAsync(audioFilePath);
+            Console.WriteLine(ttt.Length.ToString());
+            ttt = await decoder.ConvertFileToStreamAsync(audioFilePath);
+            Console.WriteLine(ttt.Length.ToString());
+        }
+        catch(Exception e) 
+        {
+            Console.WriteLine(e.Message);
+        }
+        
     }
 
     private async Task TranscribeAudio()
@@ -188,19 +195,52 @@
                 transcriptionResult = "";
                 DateTime processingTime = DateTime.Now;
 
-                //await WhisperNetService.LoadModelAsync(@"E:\AiModels\Whisper\ggml-meduim-mongolian-final.bin");
-                Console.WriteLine("Новая модель загружена.");
-
+               
                 var parameters = new InferenceRequestDto
                     {
-                        Threads = 1,
-                        //Processors = 6,
-                        Temperature = 0.0,
+                        Temperature = 0.7f,
+                        TemperatureInc = 0.1f,
                         ResponseFormat = "text",
-                        Language = "auto"
+                        Threads = 6,
+                        Processors = 3,
+                        OffsetT = 0,
+                        OffsetN = 0,
+                        Duration = 0,
+                        MaxContext = -1,
+                        MaxLen = 0,
+                        SplitOnWord = true,
+                        BestOf = 2,
+                        BeamSize = -1,
+                        WordThold = 0.005f,
+                        EntropyThold = 2.00f,
+                        LogprobThold = -2.00f,
+                        DebugMode = true,
+                        Translate = false,
+                        Diarize = true,
+                        Tinydiarize = false,
+                        NoFallback = true,
+                        PrintSpecial = false,
+                        PrintColors = false,
+                        PrintRealtime = false,
+                        PrintProgress = false,
+                        NoTimestamps = true,
+                        Language = "auto",
+                        DetectLanguage = false,
+                        Prompt = "",
+                        //Model = "models/ggml-base.en.bin",
+                        OvEDevice = "CPU",
+                        Convert = false, // Convert audio to WAV, requires ffmpeg
+
+                        NoSpeechThold = 0.6f,
+                        SuppressNst = true,
+                        NoContext = false,
+                        NoGpu = false,
+                        FlashAttn = true
                     };
 
-                var result = await WhisperNetService.TranscribeAsync(audioFilePath, @"D:\AiModels\Whisper\ggml-meduim-mongolian-final.bin");
+                //var result = await WhisperNetService.TranscribeAsync(audioFilePath, @"D:\AiModels\Whisper\ggml-meduim-mongolian-final.bin");
+                await WhisperCppService.LoadModelAsync("\\\\192.168.2.252\\AiModels\\Whisper\\Mithilss-whisper-large-v3-chinese-finetune-16.12.23-wer30.bin");
+                var result = await WhisperCppService.TranscribeAsync(audioFilePath, parameters);
 
                 //var resultLengDetect = await WhisperNetService.DetectLanguageAsync(audioFilePath, @"D:\AiModels\Whisper\ggml-meduim-mongolian-final.bin");
 

@@ -17,6 +17,7 @@
 @using UglyToad.PdfPig.Core
 @using Shield.Estimator.Shared.Components.Modules.TranslateFiles
 @using Shield.Estimator.Business.Services
+@using System.Threading
 
 @inject HttpClient Http
 @inject IJSRuntime JsRuntime
@@ -40,22 +41,24 @@
         <MudText Typo="Typo.body2" Style="display: flex; align-items: center">
 
             <MudFileUpload T="IReadOnlyList<IBrowserFile>" MaximumFileCount="300" Accept=".doc, .docx, .pdf, .html" FilesChanged="UploadFiles" Disabled="@TranslateSingleton.TranslateInstance.IsTranscribing">
-                    <ActivatorContent>
-                        
-                        <MudButton Variant="Variant.Filled" Color="@Color" Style="height: 35px; width: 182px;"
-                        StartIcon="@Icons.Material.Filled.CloudUpload">
-                            <span>Выбрать файлы</span>
-                        </MudButton>
+                <ActivatorContent>
 
-                    </ActivatorContent>
-                </MudFileUpload>
+                    <MudButton Variant="Variant.Filled" Color="@Color" Style="height: 35px; width: 182px;"
+                    StartIcon="@Icons.Material.Filled.CloudUpload">
+                        <span>Выбрать файлы</span>
+                    </MudButton>
 
-                @*
+                </ActivatorContent>
+            </MudFileUpload>
+
+            <MudCheckBox Disabled="@TranslateSingleton.TranslateInstance.IsTranscribing" Style="margin-left:20px; margin-right:20px;" T="bool" Label="Использовать кодировку GB2312 (для html-файлов)" @bind-value="@IsGB2312" />
+
+            @if (TranslateSingleton.TranslateInstance.IsTranscribing)
+            {
                 <MudButton Variant="Variant.Filled" Color="@Color" Style="height: 35px;" OnClick="StopProcess">
                     Стоп
                 </MudButton>
-                *@
-            <MudCheckBox Disabled="@TranslateSingleton.TranslateInstance.IsTranscribing" Style="margin-left:20px; margin-right:20px;" T="bool" Label="Использовать кодировку GB2312 (для html-файлов)" @bind-value="@IsGB2312" />
+            }
         </MudText>
 
         @if (uploadedFiles.Any())
@@ -118,6 +121,9 @@
 </MudContainer>
 
 @code {
+
+    private CancellationTokenSource _cts;
+
     private MudBlazor.Color Color = MudBlazor.Color.Surface;
     private List<IBrowserFile> uploadedFiles = new();
     private Dictionary<string, string> filePathMapping = new();
@@ -145,7 +151,7 @@
 
     private void StopProcess() 
     {
-        TranslateSingleton.TranslateInstance.IsStopTranlation = true;
+        _cts?.Cancel();
     }
 
     private async Task UploadFiles(IReadOnlyList<IBrowserFile> files)
@@ -176,15 +182,16 @@
 
     private async Task TranslateAll()
     {
+        _cts = new CancellationTokenSource();
+
         TranslateSingleton.TranslateInstance.IsTranscribing = true;
-        TranslateSingleton.TranslateInstance.IsStopTranlation = false;
         translateResult = string.Empty;
 
         try
         {
             foreach (var file in uploadedFiles)
             {
-                if (TranslateSingleton.TranslateInstance.IsStopTranlation) return;
+                _cts.Token.ThrowIfCancellationRequested();
 
                 TranslateSingleton.TranslateInstance.ProcessTranlation = string.Empty;
 
@@ -197,24 +204,27 @@
 
                 if (fileExt == ".pdf")
                 {
-                    await TranslatePdf(sourcePath, targetPath);
+                    await TranslatePdf(sourcePath, targetPath, _cts.Token);
                 }
                 else if (fileExt == ".html" || fileExt == ".htm")
                 {
-                    await TranslateHtmlPage(sourcePath, targetPath);
+                    await TranslateHtmlPage(sourcePath, targetPath, _cts.Token);
                 }
                 else
                 {
-                    await TranslateWordDocument(sourcePath, targetPath);
+                    await TranslateWordDocument(sourcePath, targetPath, _cts.Token);
                 }
                 TranslateSingleton.TranslateInstance.ProcessTranlation = DateTime.Now + ": завершено.\n" + TranslateSingleton.TranslateInstance.ProcessTranlation;
             }
             translateResult = "Перевод файлов завершён.";
-            TranslateSingleton.TranslateInstance.IsStopTranlation = false;
+        }
+        catch (OperationCanceledException)
+        {
+            translateResult = "Операция отменена.";
         }
         catch (Exception ex)
         {
-            translateResult = $"Ошибка: {ex.Message}";
+            translateResult = $"Ошибка: {ex.Message}.";
         }
         finally
         {
@@ -223,7 +233,7 @@
         }
     }
 
-    private async Task TranslatePdf(string docFilePath, string newDocFilePath)
+    private async Task TranslatePdf(string docFilePath, string newDocFilePath, CancellationToken cancellationToken)
     {
         using (var pdf = PdfDocument.Open(docFilePath))
         {
@@ -280,19 +290,36 @@
         }
     }
 
-    private async Task TranslateWordDocument(string docFilePath, string newDocFilePath)
+    private async Task TranslateWordDocument(string docFilePath, string newDocFilePath, CancellationToken cancellationToken)
     {
 
         try
         {
             File.Copy(docFilePath, newDocFilePath, overwrite: true);
 
-            using (WordprocessingDocument wordDocument = WordprocessingDocument.Open(newDocFilePath, true))
+            using (WordprocessingDocument doc = WordprocessingDocument.Open(newDocFilePath, true))
             {
-                var body = wordDocument.MainDocumentPart.Document.Body;
-                await TranslateParagraphs(body);
-                await TranslateTables(body);
-                wordDocument.Save();
+                // Основное тело документа
+                await ProcessElement(doc.MainDocumentPart.Document.Body, cancellationToken);
+
+                // Обработка колонтитулов
+                foreach (var header in doc.MainDocumentPart.HeaderParts)
+                    await ProcessElement(header.Header, cancellationToken);
+
+                foreach (var footer in doc.MainDocumentPart.FooterParts)
+                    await ProcessElement(footer.Footer, cancellationToken);
+
+                // Обработка сносок и комментариев
+                if (doc.MainDocumentPart.FootnotesPart != null)
+                    await ProcessElement(doc.MainDocumentPart.FootnotesPart.Footnotes, cancellationToken);
+
+                // Обработка текстовых блоков в графических элементах
+                foreach (var drawing in doc.MainDocumentPart.Document.Descendants<Drawing>())
+                    await ProcessDrawing(drawing, cancellationToken);
+
+                //await TranslateParagraphs(body);
+                //await TranslateTables(body);
+                doc.Save();
             }
             translateResult = "Перевод выполнен. ";
         }
@@ -303,7 +330,92 @@
 
     }
 
-    private async Task TranslateHtmlPage(string docFilePath, string newDocFilePath)
+    private async Task ProcessElement(OpenXmlElement element, CancellationToken cancellationToken)
+    {
+        await ProcessParagraphs(element, cancellationToken);
+        await ProcessTables(element, cancellationToken);
+        await ProcessTextRuns(element, cancellationToken);
+    }
+
+    private async Task ProcessTextRuns(OpenXmlElement element, CancellationToken cancellationToken)
+    {
+        foreach (var run in element.Descendants<Run>())
+        {
+            foreach (var text in run.Elements<Text>().Where(t => !string.IsNullOrWhiteSpace(t.Text)))
+            {
+                string originalText = text.Text;
+                cancellationToken.ThrowIfCancellationRequested();
+                text.Text = await KoboldService.GenerateTextAsync(PreText + text.Text, cancellationToken);
+                TranslateSingleton.TranslateInstance.ProcessTranlation += $"{originalText} ⬜🟦🟥 {text.Text} \n";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private async Task ProcessParagraphs(OpenXmlElement element, CancellationToken cancellationToken)
+    {
+        foreach (var para in element.Elements<DocumentFormat.OpenXml.Wordprocessing.Paragraph>().ToList())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string originalText = para.InnerText;
+            if (!string.IsNullOrWhiteSpace(originalText))
+            {
+                string translatedText = await KoboldService.GenerateTextAsync(PreText + originalText);
+                para.RemoveAllChildren();
+                para.AppendChild(new DocumentFormat.OpenXml.Wordprocessing.Run(new Text(translatedText)));
+                TranslateSingleton.TranslateInstance.ProcessTranlation += $"{originalText} ⬜🟦🟥 {translatedText} \n";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private async Task ProcessTables(OpenXmlElement element, CancellationToken cancellationToken)
+    {
+        foreach (var table in element.Elements<Table>().ToList())
+        {
+            foreach (var row in table.Elements<TableRow>().ToList())
+            {
+                foreach (var cell in row.Elements<TableCell>().ToList())
+                {
+                    foreach (var para in cell.Elements<DocumentFormat.OpenXml.Wordprocessing.Paragraph>().ToList())
+                    {
+                        foreach (var run in para.Elements<DocumentFormat.OpenXml.Wordprocessing.Run>().ToList())
+                        {
+                            foreach (var text in run.Elements<Text>().ToList())
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+
+                                string originalText = text.Text;
+                                if (!string.IsNullOrWhiteSpace(originalText))
+                                {
+                                    string translatedText = await KoboldService.GenerateTextAsync(PreText + originalText);
+                                    text.Text = translatedText;
+                                    TranslateSingleton.TranslateInstance.ProcessTranlation += $"{originalText} ⬜🟦🟥 {translatedText} \n";
+                                    await InvokeAsync(StateHasChanged);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    private async Task ProcessDrawing(Drawing drawing, CancellationToken cancellationToken)
+    {
+        foreach (var text in drawing.Descendants<DocumentFormat.OpenXml.Drawing.Text>())
+        {
+            if (!string.IsNullOrWhiteSpace(text.Text))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                text.Text = await KoboldService.GenerateTextAsync(PreText + text.Text, cancellationToken);
+            }
+        }
+    }
+
+    private async Task TranslateHtmlPage(string docFilePath, string newDocFilePath, CancellationToken cancellationToken)
     {
         try
         {
@@ -367,51 +479,6 @@
         }
     }
 
-    private async Task TranslateParagraphs(OpenXmlElement element)
-    {
-        foreach (var para in element.Elements<DocumentFormat.OpenXml.Wordprocessing.Paragraph>().ToList())
-        {
-            string originalText = para.InnerText;
-            if (!string.IsNullOrWhiteSpace(originalText))
-            {
-                string translatedText = await KoboldService.GenerateTextAsync(PreText + originalText);
-                para.RemoveAllChildren();
-                para.AppendChild(new DocumentFormat.OpenXml.Wordprocessing.Run(new Text(translatedText)));
-                TranslateSingleton.TranslateInstance.ProcessTranlation += $"{originalText} ⬜🟦🟥 {translatedText} \n";
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-    }
-
-    private async Task TranslateTables(OpenXmlElement element)
-    {
-        foreach (var table in element.Elements<Table>().ToList())
-        {
-            foreach (var row in table.Elements<TableRow>().ToList())
-            {
-                foreach (var cell in row.Elements<TableCell>().ToList())
-                {
-                    foreach (var para in cell.Elements<DocumentFormat.OpenXml.Wordprocessing.Paragraph>().ToList())
-                    {
-                        foreach (var run in para.Elements<DocumentFormat.OpenXml.Wordprocessing.Run>().ToList())
-                        {
-                            foreach (var text in run.Elements<Text>().ToList())
-                            {
-                                string originalText = text.Text;
-                                if (!string.IsNullOrWhiteSpace(originalText))
-                                {
-                                    string translatedText = await KoboldService.GenerateTextAsync(PreText + originalText);
-                                    text.Text = translatedText;
-                                    TranslateSingleton.TranslateInstance.ProcessTranlation += $"{originalText} ⬜🟦🟥 {translatedText} \n";
-                                    await InvokeAsync(StateHasChanged);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     private async void SaveTranslatedFile()
     {

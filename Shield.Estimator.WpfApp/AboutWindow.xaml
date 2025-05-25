@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="О программе" 
         Height="620" 
-        Width="550"
+        Width="570"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize">
     <Grid Margin="10">
@@ -23,12 +23,12 @@
 
             <TextBlock TextWrapping="Wrap" Margin="5,0,5,0">
                 <Run Text="Faster" FontSize="14" FontWeight="DemiBold"/>
-                <Run Text="- Требует от 6Гб видео или оперативной памяти, работает на Nvidia (CUDA) или на CPU (медленно), диаризация (разбиение на собеседников) для моноаудио. Производительность на видеокарте высокая. С опцией диаризации может пропускать часть текста."/>
+                <Run Text="- Требует Win10_x64 или более позднюю версию, от 6Гб видео или оперативной памяти, работает на Nvidia (CUDA) или на CPU (медленно), диаризация (разбиение на собеседников) для моноаудио. Производительность на видеокарте высокая. С опцией диаризации может пропускать часть текста."/>
             </TextBlock>
 
             <TextBlock TextWrapping="Wrap" Margin="5,0,5,0">
                 <Run Text="Net" FontSize="14" FontWeight="DemiBold"/>
-                <Run Text="- Требует от 4Гб видео или оперативной памяти для большой (large) модели, оптимизировано для CPU, есть поддержка  CUDA, VULKAN, диаризация только для стереоаудио. Производительность средняя. Возможность использовать кастомные модели формата ggml, добавив их в папку ggml_models. Предустановленные модели: ggml-large-v3-general.bin (рекомендованно для применения), ggml-large-v3-russian.bin, ggml-large-uzbek.bin"/>
+                <Run Text="- Требует Win7_x64 или более позднюю версию, от 4Гб видео или оперативной памяти для большой (large) модели, оптимизировано для CPU, есть поддержка  CUDA, VULKAN, диаризация только для стереоаудио. Производительность средняя. Возможность использовать кастомные модели формата ggml, добавив их в папку ggml_models. Предустановленные модели: ggml-large-v3-general.bin (рекомендованно для применения), ggml-large-v3-russian.bin, ggml-large-uzbek.bin"/>
             </TextBlock>
 
             <TextBlock Text="Что выбрать?" 

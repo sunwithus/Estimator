@@ -2,11 +2,6 @@
 
 using Shield.Estimator.Shared.Components.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Components;
-using MudBlazor;
-using System;
-using Shield.Estimator.Shared.Components.EntityFrameworkCore.SqliteModel;
-using Shield.Estimator.Shared.Components.Pages;
 
 namespace Shield.Estimator.Shared.Components.Modules.AiEstimateDb
 {

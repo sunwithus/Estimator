@@ -42,7 +42,7 @@ public class FFMpegConverter : IAudioConverter
         };
         GlobalFFOptions.Configure(_ffOptions);
         //TODO -ac 1 // разобраться - для Whisper нужно -ac 1, но тогда реализация нынешней диаризацией не работает
-        _customArguments = "-f wav -c:a pcm_s16le -ar 16000 -vn -hide_banner -loglevel error"; 
+        _customArguments = "-f wav -ac 2 -c:a pcm_s16le -ar 16000 -vn -hide_banner -loglevel error"; 
         /*
         -c:a pcm_s16le - кодек: 16-битный PCM little-endian
         -ar 16000 - частота дискретизации 16 kHz

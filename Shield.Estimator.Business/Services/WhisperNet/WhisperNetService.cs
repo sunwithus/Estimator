@@ -1,14 +1,15 @@
 ﻿//WhisperNetService.cs
 
-using Shield.Estimator.Business.Options.WhisperOptions;
 using Microsoft.Extensions.Options;
 using Whisper.net.LibraryLoader;
 using Whisper.net;
-using Shield.AudioConverter.AudioConverterServices;
 using Whisper.net.Wave;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text;
+
+using Shield.AudioConverter.AudioConverterServices;
+using Shield.Estimator.Business.Options.WhisperOptions;
 
 namespace Shield.Estimator.Business.Services.WhisperNet;
 
@@ -32,7 +33,7 @@ public class WhisperNetService : IDisposable
     }
     private void InitializeRuntime()
     {
-        RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Cuda, RuntimeLibrary.Vulkan, RuntimeLibrary.Cpu];
+        RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Cuda, RuntimeLibrary.Vulkan, RuntimeLibrary.Cpu, RuntimeLibrary.CpuNoAvx, RuntimeLibrary.OpenVino];
         //using var whisperLogger = LogProvider.AddConsoleLogging(WhisperLogLevel.Info);
     }
 
@@ -137,6 +138,9 @@ public class WhisperNetService : IDisposable
                     continue;
                 }
 
+                // Тестовый вывод информации
+                _logger.LogInformation($"Converter {converterType} loaded {stream.Length} bytes");
+
                 var parser = new WaveParser(stream);
                 await parser.InitializeAsync();
                 return new WaveData(stream, parser);
@@ -144,6 +148,7 @@ public class WhisperNetService : IDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "{Converter} conversion failed", converterType);
+                throw;
             }
         }
         throw new InvalidOperationException("All audio conversions failed");

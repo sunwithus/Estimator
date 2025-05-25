@@ -405,6 +405,8 @@ public class AiBackgroundService : BackgroundService
 
         // Db => get audio (left, right, recordType, eventCode)
         var (audioDataLeft, audioDataRight, recordType, eventCode) = await EFCoreQuery.GetAudioDataAsync(freshEntity.SInckey, context);
+        if (audioDataLeft == null) return;
+
         _logger.LogInformation($"Audio data (left, right, recordType, eventCode) for key {freshEntity.SInckey} loaded. recordType = " + recordType);
 
         // FFMpeg or Decoder => audio to folder + Whisper

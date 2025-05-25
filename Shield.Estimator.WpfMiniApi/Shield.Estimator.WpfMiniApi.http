@@ -1,0 +1,17 @@
+@Shield.Estimator.WpfMiniApi_HostAddress = https://localhost:7040
+
+POST {{Shield.Estimator.WpfMiniApi_HostAddress}}/transcribe
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="audioFile"; filename="audio.mp3"
+Content-Type: audio/mpeg
+
+< D:\dotnet\audio.mp3
+--boundary
+Content-Disposition: form-data; name="model"
+
+D:\AiModels\Whisper\ggml-base.bin
+--boundary--
+
+###

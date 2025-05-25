@@ -1,0 +1,414 @@
+﻿@page "/"
+
+@using MudBlazor
+@using Microsoft.AspNetCore.Components
+@using Microsoft.Extensions.Configuration
+@using Microsoft.Extensions.Configuration.Json
+@using Microsoft.JSInterop
+@using System.IO
+@using Newtonsoft.Json.Linq;
+
+@using Ookii.Dialogs.Wpf
+@using System.Threading.Tasks
+@using System.Windows
+@using System.Diagnostics
+
+
+
+@using Shield.Estimator.Voice2Text.Data
+@using Shield.Estimator.Voice2Text.Pages.Modules
+
+@inject IConfiguration Configuration
+@inject FileProcessor FileProcessor
+@inject ProcessState ProcessState
+@inject IDialogService DialogService
+
+
+<PageTitle>Shield Estimator</PageTitle>
+
+<MudLayout>
+
+    <MudAppBar>
+        <MudMenu Label="Файл">
+            <MudMenuItem Icon="@Icons.Material.Filled.Info" Text="О программе" OnClick="MenuItemAbout_Click" />
+            <MudMenuItem Icon="@Icons.Material.Filled.Language" Text="Список языков" OnClick="MenuItemLang_Click" />
+            <MudDivider />
+        </MudMenu>
+    </MudAppBar>
+
+    <MudContainer MaxWidth="MaxWidth.Large" Class="mt-2">
+        <MudGrid>
+            <!-- Режим работы -->
+            <MudItem xs="12" md="3" Class="mb-0">
+                <MudRadioGroup @bind-Value="UseFaster">
+                    <MudText Style="display: flex; flex-direction: column;">
+                        <MudRadio Value="false">Net</MudRadio>
+                        <MudRadio Value="true">Faster</MudRadio>
+                    </MudText>
+                </MudRadioGroup>
+            </MudItem>
+
+            <MudItem xs="12" md="9" Class="mb-2 d-flex align-center">
+                @if (!UseFaster)
+                {
+                    <MudSelect @bind-Value="SelectedModel" Label="Модель" Style="left: 15px;">
+                        @foreach (var item in AvailableModels)
+                        {
+                            <MudSelectItem Value="item">@(Path.GetFileName(item))</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+                else
+                {
+                    <MudCheckBox @bind-Value="ProcessState.IsDiarizationEnabled" Label="Диаризация" Class="mr-4" />
+                    <MudCheckBox @bind-Value="ProcessState.UseCpu" Label="Использовать CPU" />
+                }
+            </MudItem>
+
+            <!-- Ввод/вывод -->
+            <MudItem xs="12" Class="mb-0">
+                <div class="d-flex align-center">
+                    <MudTextField Margin="Margin.Dense" @bind-Value="InputPath" Dense="true" Label="Входная директория"
+                    Variant="Variant.Outlined" Class="mr-2" Style="width: 450px"/>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Folder"
+                               OnClick='() => SelectFolder("input")' Class="ml-2 mt-1">Выбрать</MudButton>
+                </div>
+                <div class="d-flex align-center">
+                    <MudTextField Margin="Margin.Dense" @bind-Value="OutputPath" Dense="true" Label="Выходная директория"
+                    Variant="Variant.Outlined" Class="mr-2" Style="width: 450px" />
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Folder"
+                               OnClick='() => SelectFolder("output")' Class="ml-2  mt-1">Выбрать</MudButton>
+                </div>
+            </MudItem>
+
+            <!-- Консоль -->
+            <MudItem xs="12" Class="mb-0">
+                <MudTextField Typo="Typo.caption" Label="Консоль" Variant="Variant.Outlined" Lines="9" 
+                ReadOnly="true" @bind-Value="ProcessState.ConsoleMessage" Class="full-width"/>
+            </MudItem>
+
+            <!-- Прогресс -->
+            <MudItem xs="12" Class="mb-0">
+                <div class="d-flex align-center">
+                    <MudText Class="mr-2">CPU:</MudText>
+                    <MudProgressLinear Class="mr-4" Style="width: 70px;" Value="@CpuUsage"/>
+                    <MudText Class="mr-4">@($"{CpuUsage:F0}%")</MudText>
+
+                    <MudText Class="mr-2">RAM:</MudText>
+                    <MudProgressLinear Class="mr-4" Style="width: 70px;" Value="@RamUsage"/>
+                    <MudText Class="mr-4">@($"{RamUsage:F0}%")</MudText>
+
+                    <MudText>@MemoryStatus</MudText>
+
+                    @if (CudaAvailable)
+                    {
+                        <MudTextField Label="CUDA Memory" Class="ml-4" 
+                        @bind-Value="CudaMemoryGB" Style="width: 120px"/>
+                    }
+                </div>
+            </MudItem>
+
+            <!-- Кнопки -->
+            <MudItem xs="12">
+                <div class="d-flex align-center">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" 
+                    Disabled="@ProcessState.IsProcessing" Class="mr-2"
+                    OnClick="StartProcessing">Старт</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" 
+                    Disabled="@(!ProcessState.IsProcessing)" Class="mr-4"
+                    OnClick="StopProcessing">Стоп</MudButton>
+
+                    <MudText>@ProcessingStatus</MudText>
+                </div>
+            </MudItem>
+        </MudGrid>
+    </MudContainer>
+</MudLayout>
+
+@code {
+
+    private bool UseFaster { get; set; } = true;
+    private List<string> AvailableModels { get; set; } = new();
+    private string SelectedModel { get; set; }
+    private string InputPath { get; set; }
+    private string OutputPath { get; set; }
+    private double CpuUsage { get; set; }
+    private double RamUsage { get; set; }
+    private string MemoryStatus { get; set; }
+    private bool CudaAvailable { get; set; }
+    private int CudaMemoryGB { get; set; }
+    private string ProcessingStatus { get; set; }
+    private CancellationTokenSource _cts;
+    private Timer _metricsTimer;
+    private Timer _loadingTimer;
+    private string _loadingDots = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadModelsAsync();
+        LoadSettings();
+        ProcessState.OnMetricsUpdated += UpdateMetrics;
+        ProcessState.ConsoleMessage = string.Empty;
+        StartMetricsTimer();
+    }
+
+    private async Task LoadModelsAsync()
+    {
+        await Task.Delay(1);
+        var modelPath = Path.Combine(AppContext.BaseDirectory, "ggml_models");
+        //UpdateStatus(modelPath);
+        if (Directory.Exists(modelPath))
+        {
+            AvailableModels = Directory.GetFiles(modelPath, "*.bin")
+                .Select(Path.GetFullPath)
+                .ToList();
+
+            if (AvailableModels.Any())
+                SelectedModel = AvailableModels.First();
+        }
+    }
+
+    private void LoadSettings()
+    {
+        InputPath = Configuration["InputPath"] ?? string.Empty;
+        OutputPath = Configuration["OutputPath"] ?? string.Empty;
+        UseFaster = bool.Parse(Configuration["UseFaster"] ?? "true");
+    }
+
+    private void UpdateMetrics(double cpu, double ram)
+    {
+        InvokeAsync(() =>
+        {
+            CpuUsage = cpu;
+            RamUsage = ram;
+            StateHasChanged();
+        });
+    }
+
+    private void StartMetricsTimer()
+    {
+        _metricsTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(() =>
+            {
+                // Для веб-приложения метрики нужно получать через API
+                // Временная заглушка
+                CpuUsage = ProcessState.CpuUsage;
+                RamUsage = ProcessState.RamUsage;
+                StateHasChanged();
+            });
+        }, null, 0, 1000); 
+        /*
+            _ = TimerFactory.Create(async () =>
+            {
+            await GetServerMetricsAsync();
+            StateHasChanged();
+            }, 1000);
+        */
+    }
+
+    private async Task MenuItemAbout_Click()
+    {
+        var parameters = new DialogParameters
+        {
+            { "Content",
+                "Shield Estimator\n" +
+                "Версия: 1.0.0\n\n" +
+                "Программа для преобразования голоса в текст\n" +
+                "© 2024 Компания Shield" }
+        };
+
+        var options = new DialogOptions
+            {
+                CloseButton = true,
+                MaxWidth = MaxWidth.Small
+            };
+
+
+        await DialogService.ShowAsync<DialogUsageExample_Dialog>("О программе", parameters, options);
+    }
+
+    private async Task MenuItemLang_Click()
+    {
+        // Логика для "Список языков"
+    }
+
+
+    private async Task SelectInputFolder()
+    {
+        var result = await WindowsFolderPicker.PickFolderAsync();
+        if (!string.IsNullOrEmpty(result))
+        {
+            InputPath = result;
+            UpdateConfiguration("InputPath", InputPath);
+        }
+    }
+
+    private async Task SelectOutputFolder()
+    {
+        var result = await WindowsFolderPicker.PickFolderAsync();
+        if (!string.IsNullOrEmpty(result))
+        {
+            OutputPath = result;
+            UpdateConfiguration("OutputPath", OutputPath);
+        }
+    }
+
+    private void InitializeTimers()
+    {
+
+        _metricsTimer = new Timer(_ =>
+            InvokeAsync(() => UpdateLoadingDots()),
+            null, 0, 2000);
+
+        _loadingTimer = new Timer(_ =>
+            InvokeAsync(UpdateLoadingDots),
+            null, Timeout.Infinite, 2000);
+    }
+
+    private void UpdateLoadingDots()
+    {
+        _loadingDots = new string('.', (_loadingDots.Length + 1) % 4);
+        StateHasChanged();
+    }
+
+    private async Task SelectFolder(string type)
+    {
+        var result = await WindowsFolderPicker.PickFolderAsync();
+        if (type == "input") InputPath = result;
+
+        else OutputPath = result;
+    }
+
+    private async Task StartProcessing()
+    {
+        try
+        {
+            _cts = new CancellationTokenSource();
+            ProcessState.IsProcessing = true;
+            StartLoadingAnimation();
+
+            ProcessState.ConsoleMessage = "Выполнение началось...";
+            await Task.Delay(50);
+            ProcessState.IsProcessing = true;
+
+            if (ProcessState.UseFaster)
+            {
+                await FileProcessor.ProcessFasterExistingFilesAsync(
+                    InputPath,
+                    OutputPath,
+                    ProcessState,
+                    _cts);
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(SelectedModel))
+                {
+                    ProcessState.ConsoleMessage += "Сначала выберите модель.\n";
+                    return;
+                }
+
+                await FileProcessor.ProcessNetExistingFilesAsync(
+                    InputPath,
+                    OutputPath,
+                    SelectedModel,
+                    //ModelPathTextBox.Text,
+                    ProcessState,
+                    ProcessState.UseWordTimestamps,
+                    _cts);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            ProcessState.ConsoleMessage += "Операция отменена.\n";
+        }
+        catch (Exception ex)
+        {
+            ProcessState.ConsoleMessage += $"Ошибка: {ex.Message}\n";
+        }
+        finally
+        {
+            ProcessState.IsProcessing = false;
+            StopLoadingAnimation();
+            StateHasChanged();
+        }
+    }
+
+    private void StartLoadingAnimation()
+    {
+        _loadingTimer?.Dispose();
+        _loadingTimer = new Timer(async _ =>
+        {
+            _loadingDots = new string('.', (_loadingDots.Length + 1) % 4);
+            ProcessingStatus = $"Обработка{_loadingDots}";
+            await InvokeAsync(StateHasChanged);
+        }, null, 0, 500);
+    }
+
+    private void StopLoadingAnimation()
+    {
+        _loadingTimer?.Dispose();
+        ProcessingStatus = string.Empty;
+        _loadingDots = string.Empty;
+    }
+
+    public void Dispose()
+    {
+        _loadingTimer?.Dispose();
+        _cts?.Dispose();
+        ProcessState.OnMetricsUpdated -= UpdateMetrics;
+    }
+
+    private void StopProcessing() 
+    {
+        try
+        {
+            _cts?.Cancel();
+            ProcessingStatus = string.Empty;
+            //UpdateStatus("Отмена операции...");
+            StateHasChanged();
+        }
+        catch (ObjectDisposedException)
+        {
+            ProcessState.ConsoleMessage += "Ошибка StopProcessing => ObjectDisposedException\n";
+        }
+        catch (Exception ex)
+        {
+            ProcessState.ConsoleMessage += $"Ошибка StopProcessing => {ex.Message}\n";
+        }
+    }
+
+    private void UpdateStatus(string message)
+    {
+        var newMessage = $"{ProcessState.ConsoleMessage}[{DateTime.Now:T}] {message}\n";
+        newMessage.Trim();
+        ProcessState.ConsoleMessage = string.Join("\n", newMessage.Split('\n').Take(50));
+    }
+
+    private void UpdateConfiguration(string key, string value)
+    {
+        try
+        {
+            var configPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            var json = File.ReadAllText(configPath);
+            var jsonObj = JObject.Parse(json);
+
+            jsonObj[key] = value;
+
+            File.WriteAllText(configPath, jsonObj.ToString());
+
+            // Релоад конфигурации
+            var configBuilder = new ConfigurationBuilder()
+                .AddJsonFile(configPath, optional: true, reloadOnChange: true)
+                .Build();
+            Configuration = configBuilder;
+        }
+        catch (Exception ex)
+        {
+            ProcessState.ConsoleMessage += $"Ошибка сохранения настроек: {ex.Message}\n";
+        }
+    }
+
+
+
+}
