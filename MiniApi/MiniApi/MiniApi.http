@@ -1,6 +1,20 @@
-@MiniApi_HostAddress = http://localhost:5283
+@baseUrl = http://localhost:7321
 
-GET {{MiniApi_HostAddress}}/weatherforecast/
-Accept: application/json
+### Transcribe Audio
+POST {{baseUrl}}/api/transcribe/net
+Content-Type: multipart/form-data; boundary=MyBoundary
 
-###
+--MyBoundary
+Content-Disposition: form-data; name="audioFile"; filename="1.wav"
+Content-Type: audio/wav
+
+< D:\dotnet\wav\1.wav
+--MyBoundary
+Content-Disposition: form-data; name="model"
+
+uz
+--MyBoundary
+Content-Disposition: form-data; name="useWordTimestamps"
+
+true
+--MyBoundary--

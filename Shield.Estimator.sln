@@ -11,7 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Shield.Estimator.WhisperWpf
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioConverter", "AudioConverter\AudioConverter.csproj", "{E63AD5EE-8527-4570-AF56-D37F0F10807B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MiniApi", "MiniApi\MiniApi\MiniApi.csproj", "{8A4861E9-F807-4838-A126-764D9274A3E5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Shield.WhisperNet.MiniApi", "MiniApi\MiniApi\Shield.WhisperNet.MiniApi.csproj", "{8A4861E9-F807-4838-A126-764D9274A3E5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Shield.Estimator.Voice2Text", "Shield.Estimator.Voice2Text\Shield.Estimator.Voice2Text.csproj", "{D23178B6-42D2-4E05-85B4-065498A73B24}"
 EndProject

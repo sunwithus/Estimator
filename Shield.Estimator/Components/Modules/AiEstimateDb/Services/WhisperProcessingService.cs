@@ -9,28 +9,31 @@ namespace Shield.Estimator.Shared.Components.Modules.AiEstimateDb.Services;
 
 public class WhisperProcessingService
 {
-    private readonly IOptions<WhisperCppOptions> _options;
+    private readonly IOptions<WhisperCppOptions> _optionsCpp;
     private readonly IOptions<WhisperNetOptions> _optionsNet;
     private readonly WhisperFasterDockerService _whisperFaster;
     private readonly WhisperCppService _whisperCpp;
     private readonly WhisperNetService _whisperNet;
+    private readonly WhisperNetApiService _whisperNetApi;
     private readonly ILogger<WhisperProcessingService> _logger;
 
-    private string _modelPathWhisperCpp = "";
+    //private string _modelPathWhisperCpp = "";
 
     public WhisperProcessingService(
-        IOptions<WhisperCppOptions> options,
+        IOptions<WhisperCppOptions> optionsCpp,
         IOptions<WhisperNetOptions> optionsNet,
         WhisperFasterDockerService whisperFaster,
         WhisperCppService whisperCpp,
         WhisperNetService whisperNet,
+        WhisperNetApiService whisperNetApi,
         ILogger<WhisperProcessingService> logger)
     {
-        _options = options;
+        _optionsCpp = optionsCpp;
         _optionsNet = optionsNet;
         _whisperFaster = whisperFaster;
         _whisperCpp = whisperCpp;
         _whisperNet = whisperNet;
+        _whisperNetApi = whisperNetApi;
         _logger = logger;
     }
 
@@ -42,32 +45,25 @@ public class WhisperProcessingService
             _logger.LogInformation("WHISPER Started...");
 
             // Если язык не из списка, на который есть модель - Default через Docker Api
-            if (!_options.Value.CustomModels.ContainsKey(entity.SPostid) || !_options.Value.CustomModels.TryGetValue(entity.SPostid, out string modelPath) || !File.Exists(modelPath))
+            if (!_optionsNet.Value.CustomModels.Contains(entity.SPostid))
             {
                 _logger.LogInformation($"Распознавание _whisperFasterDocker");
                 recognizedText = await _whisperFaster.TranscribeAsync(audioPath);
-                Console.WriteLine(_optionsNet.Value.DefaultModelPath);
-                //recognizedText = await _whisperNet.TranscribeAsync(audioPath, _optionsNet.Value.DefaultModelPath);
             }
-            // Иначе - WhisperCpp Api
+            // Иначе - WhisperNetApi
             else
             {
                 try
                 {
-                    if (_modelPathWhisperCpp != modelPath)
-                    {
-                        _logger.LogInformation($"\nЗагрузка модели {modelPath}");
-                        await _whisperCpp.LoadModelAsync(modelPath);
-                        _modelPathWhisperCpp = modelPath;
-                    }
-
-                    _logger.LogInformation($"\nРаспознавание _whisperCpp");
-                    recognizedText = await _whisperCpp.TranscribeAsync(audioPath);
+                    _logger.LogInformation($"Распознавание _whisperNetApi");
+                    recognizedText = await _whisperNetApi.TranscribeAsync(audioPath, _optionsNet.Value.WhisperNetApi, entity.SPostid);
                 }
                 catch
                 {
+                    Console.WriteLine();
+                    Console.WriteLine("ОООООООООООООООООООШШШШШШШШШШШШШШШШШШШШШШШШШИИИИИИИИИИИИИИИИИИИИИИИИИБББББББББББББББББББББББББКККККККККККККККККККККККККАААААААААААААААААААААААА");
+                    Console.WriteLine();
                     recognizedText = await _whisperFaster.TranscribeAsync(audioPath);
-                    //recognizedText = await _whisperNet.TranscribeAsync(audioPath, _optionsNet.Value.DefaultModelPath);
                 }
             }
             return recognizedText;

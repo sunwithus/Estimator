@@ -21,7 +21,11 @@ public static class BusinessServiceExtensions
 
        
         services.AddSingleton<WhisperNetService>();
-        //services.AddSingleton<WhisperNetService2>();
+
+        services.AddHttpClient<WhisperNetApiService>(client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(15);
+        });
 
         services.AddHttpClient<WhisperCppService>(client =>
         {

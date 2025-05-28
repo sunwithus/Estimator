@@ -2,6 +2,8 @@
 
 public class WhisperNetOptions
 {
+    public string[] CustomModels { get; set; }
+    public string WhisperNetApi { get; set; } = "";
     public string DefaultModelPath { get; set; } = "";
     public int MaxConcurrentTasks { get; set; } = 4;
     public int Threads { get; set; } = 4; //Environment.ProcessorCount;

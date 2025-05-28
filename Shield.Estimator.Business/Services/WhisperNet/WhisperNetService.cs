@@ -46,6 +46,17 @@ public class WhisperNetService : IDisposable
     {
         using var _ = _logger.BeginScope("Transcription for {File}", Path.GetFileName(audioFilePath));
 
+        progress?.Report("ModelName => " + selectedModel);
+        _logger.LogWarning("ModelName => " + selectedModel);
+
+        if (!File.Exists(selectedModel))
+        {
+            _logger.LogWarning("Файл модели отсутствует");
+            progress?.Report($"Файл модели отсутствует");
+            return "";
+        }
+
+
         try
         {
             progress?.Report("Initializing processing...");
@@ -61,6 +72,8 @@ public class WhisperNetService : IDisposable
 
             await foreach (var segment in processor.ProcessAsync(samples).WithCancellation(ct))
             {
+                ct.ThrowIfCancellationRequested();
+
                 var channel = await CalculateMaxEnergyChannel(waveData, segment);
                 resultBuilder.AppendSegment(
                     segment.Text.TrimStart(),

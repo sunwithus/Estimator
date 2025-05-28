@@ -1,16 +1,11 @@
-﻿//WhisperService.cs
+﻿//WhisperFasterDockerService.cs
 
-using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
-using AutoMapper;
 using Shield.Estimator.Business.Exceptions;
 using Shield.Estimator.Business.Options.WhisperOptions;
 using System.Net.Http.Headers;
 
-using Microsoft.Extensions.Configuration;
-using Shield.Estimator.Business.Options;
-using Shield.Estimator.Business.Options.KoboldOptions;
 
 namespace Shield.Estimator.Business.Services;
 public class WhisperFasterDockerService

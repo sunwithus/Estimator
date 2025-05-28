@@ -31,7 +31,8 @@ public class AiBackgroundService : BackgroundService
     private readonly KoboldService _kobold;
 
     private readonly IConfiguration _configuration;
-    private readonly IOptions<WhisperCppOptions> _options; // для CustomModels
+    //private readonly IOptions<WhisperCppOptions> _options; // для CustomModels
+    private readonly IOptions<WhisperNetOptions> _options; // для CustomModels
     
     private readonly IDbContextFactory<SqliteDbContext> _sqliteDbContext;
     private readonly IDbContextFactory _dbContextFactory;
@@ -40,14 +41,14 @@ public class AiBackgroundService : BackgroundService
     private string _preTextTranslate;
 
     private Channel<SprSpeechTable> _whisperFasterDockerChannel;
-    private Channel<SprSpeechTable> _whisperCppChannel;
+    private Channel<SprSpeechTable> _whisperNetChannel;
 
     private DateTime _lastCheckTime = DateTime.MinValue;
     private bool _lastStopState;
 
     //private CancellationTokenSource _combinedCts = new();
 
-    public AiBackgroundService(AudioProcessorService audioProcessor, WhisperProcessingService whisperProcessor, LanguageDetectionService languageDetection, TodoItemManagerService todoItemManager, KoboldService kobold, ILogger<AiBackgroundService> logger, IConfiguration configuration, IDbContextFactory<SqliteDbContext> sqliteDbContext, IDbContextFactory dbContextFactory, IOptions<WhisperCppOptions> options)
+    public AiBackgroundService(AudioProcessorService audioProcessor, WhisperProcessingService whisperProcessor, LanguageDetectionService languageDetection, TodoItemManagerService todoItemManager, KoboldService kobold, ILogger<AiBackgroundService> logger, IConfiguration configuration, IDbContextFactory<SqliteDbContext> sqliteDbContext, IDbContextFactory dbContextFactory, IOptions<WhisperNetOptions> options)
     {
         _logger = logger;
         _configuration = configuration;
@@ -150,7 +151,7 @@ public class AiBackgroundService : BackgroundService
             }
 
             _whisperFasterDockerChannel = Channel.CreateUnbounded<SprSpeechTable>();
-            _whisperCppChannel = Channel.CreateUnbounded<SprSpeechTable>();
+            _whisperNetChannel = Channel.CreateUnbounded<SprSpeechTable>();
 
             _logger.LogInformation($"\nAudioList count = {audioList.Count}");
             await ProcessAudioRecords(item, audioList, ct);
@@ -241,7 +242,7 @@ public class AiBackgroundService : BackgroundService
         {
             ProcessLanguageDetectionAsync(item, audioList, context, ct),
             ProcessChannelAsync(_whisperFasterDockerChannel, item, ct),
-            ProcessChannelAsync(_whisperCppChannel, item, ct)
+            ProcessChannelAsync(_whisperNetChannel, item, ct)
         };
 
         await Task.WhenAll(processingTasks);
@@ -302,9 +303,9 @@ public class AiBackgroundService : BackgroundService
             }
 
             // Добавляем запись в соответствующую очередь
-            if (_options.Value.CustomModels.ContainsKey(lang.Keys.FirstOrDefault()))
+            if (_options.Value.CustomModels.Contains(lang.Keys.FirstOrDefault()))
             {
-                await _whisperCppChannel.Writer.WriteAsync(audioRecord, ct);
+                await _whisperNetChannel.Writer.WriteAsync(audioRecord, ct);
             }
             else
             {
@@ -328,7 +329,7 @@ public class AiBackgroundService : BackgroundService
 
     private void CompleteChannels()
     {
-        SafeCompleteChannel(_whisperCppChannel, nameof(_whisperCppChannel));
+        SafeCompleteChannel(_whisperNetChannel, nameof(_whisperNetChannel));
         SafeCompleteChannel(_whisperFasterDockerChannel, nameof(_whisperFasterDockerChannel));
     }
 
@@ -393,7 +394,7 @@ public class AiBackgroundService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError($"ProcessChannelAsync => OperationCanceledException {ex.Message}");
+            _logger.LogError($"ProcessChannelAsync => GeneralException {ex.Message}");
             await HandleProcessingError(item, ex, ct);
         }
     }
@@ -446,6 +447,12 @@ public class AiBackgroundService : BackgroundService
     {
         try
         {
+            Console.WriteLine("ProcessAiResultsAndUpdateEntityAsync");
+            Console.WriteLine();
+            Console.WriteLine();
+            Console.WriteLine("transcribedText => ");
+            Console.WriteLine(transcribedText);
+            
             if (transcribedText.Length > 20)
             {
                 string preText = await Params.GetPreTextAsync(entity.SSourcename);

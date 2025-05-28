@@ -2,125 +2,88 @@ using Shield.Estimator.Business.Services.WhisperNet;
 using Shield.Estimator.Business.Services;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
-using MiniApi.Models;
+using Shield.WhisperNet.MiniApi.Models;
+using Shield.WhisperNet.MiniApi.SeedLib;
+using Shield.WhisperNet.MiniApi.Endpoints;
 using Shield.AudioConverter.AudioConverterServices.FFMpeg;
+using Shield.AudioConverter.AudioConverterServices.Decoder;
 using Shield.AudioConverter.AudioConverterServices;
+using Shield.Estimator.Business.Options.WhisperOptions;
+using System.Text.Json;
+using Microsoft.AspNetCore.Diagnostics;
+using System.ComponentModel.DataAnnotations;
 
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNamingPolicy = null);
 
-builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Services
+    .AddOpenApi()
+    .AddOptions<WhisperNetOptions>().BindConfiguration("WhisperNet")
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 
-// Конфигурация сервисов
-builder.Services.AddScoped<WhisperNetService>();
-builder.Services.AddScoped<WhisperFasterXXLService>();
-builder.Services.AddSingleton<AudioConverterFactory>();
-builder.Services.AddSingleton<FFMpegConverter>();
-builder.Services.AddHttpContextAccessor();
+builder.Services
+    .AddSingleton<AudioConverterFactory>()
+    .AddSingleton<FFMpegConverter>()
+    .AddSingleton<DecoderConverter>()
+    .AddScoped<WhisperNetService>()
+    .AddHttpContextAccessor()
+    .AddHealthChecks();
 
 // Настройка ограничений размера файла
 builder.Services.Configure<FormOptions>(options =>
-{
-    options.MultipartBodyLengthLimit = 1024 * 1024 * 1024; // 1GB
-});
-/*
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
-*/
+    options.MultipartBodyLengthLimit = 1024 * 1024 * 1024);
+
+builder.WebHost.ConfigureKestrel(options =>
+    options.Limits.MaxRequestBodySize = 1024 * 1024 * 1024);
+
 var app = builder.Build();
-/*
-app.UseCors("AllowAll");
-*/
-app.MapPost("/api/transcribe/net", async (HttpContext context,
-    [FromServices] WhisperNetService whisperNetService) =>
-{
-    var request = await ParseRequest(context);
-    var tempFilePath = await SaveTempFile(request.AudioFile);
 
-    var progress = new Progress<string>(message =>
-        context.Response.WriteAsync($"data: {message}\n\n"));
+// Middleware pipeline
+app.UseExceptionHandler(exceptionHandlerApp =>
+    exceptionHandlerApp.Run(async context =>
+        await HandleGlobalException(context)));
 
-    var result = await whisperNetService.TranscribeAsync(
-        tempFilePath,
-        request.Model,
-        progress,
-        context.RequestAborted,
-        request.UseWordTimestamps);
+// Настройка CORS для разработки
+app.UseCors(policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 
-    File.Delete(tempFilePath);
-    return Results.Ok(result);
-})
-.WithName("TranscribeNet")
-.Accepts<TranscribeRequest>("multipart/form-data")
-.Produces<string>(200);
+app.UseHttpsRedirection();
+app.UseAuthorization();
 
-app.MapPost("/api/transcribe/faster", async (HttpContext context,
-    [FromServices] WhisperFasterXXLService fasterService) =>
-{
-    var request = await ParseRequest(context);
-    var tempFilePath = await SaveTempFile(request.AudioFile);
+app.MapHealthChecks("/health");
+app.MapControllers();
 
-    var progress = new Progress<string>(message =>
-        context.Response.WriteAsync($"data: {message}\n\n"));
-
-    var result = await fasterService.TranscribeAsync(
-        new[] { tempFilePath },
-        Path.GetTempPath(),
-        progress,
-        context.RequestAborted,
-        request.Device,
-        request.UseDiarization);
-
-    File.Delete(tempFilePath);
-    return Results.Ok(result);
-})
-.WithName("TranscribeFaster")
-.Accepts<TranscribeRequest>("multipart/form-data")
-.Produces<string>(200);
+// Эндпоинт для транскрипции
+app.MapTranscriptionEndpoints();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
-
-app.MapControllers();
-
 app.Run();
 
 
-async Task<TranscribeRequest> ParseRequest(HttpContext context)
+async Task HandleGlobalException(HttpContext context)
 {
-    var form = await context.Request.ReadFormAsync();
-    return new TranscribeRequest
+    var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+
+    logger.LogError(exception, "Global exception handler");
+
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    context.Response.ContentType = "application/problem+json";
+
+    await context.Response.WriteAsJsonAsync(new ProblemDetails
     {
-        AudioFile = form.Files["audioFile"],
-        Model = form["model"],
-        UseWordTimestamps = bool.Parse(form["useWordTimestamps"]),
-        UseDiarization = bool.Parse(form["useDiarization"]),
-        Device = form["device"]
-    };
+        Status = StatusCodes.Status500InternalServerError,
+        Title = "Internal Server Error",
+        Detail = "An unexpected error occurred"
+    });
 }
 
-async Task<string> SaveTempFile(IFormFile file)
-{
-    var tempFilePath = Path.GetTempFileName();
-    using var stream = File.Create(tempFilePath);
-    await file.CopyToAsync(stream);
-    return tempFilePath;
-}
